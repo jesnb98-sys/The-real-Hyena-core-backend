@@ -1,1 +1,85 @@
+// Hyena Core Backend 🦴
+// Full sweepstakes-ready version (SQLite + PostgreSQL)
 
+const express = require("express");
+const cors = require("cors");
+const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// --- DATABASE SETUP ---
+
+// Local (testing) database
+let db = new sqlite3.Database("./hyena.db", (err) => {
+  if (err) {
+    console.error("SQLite connection failed:", err.message);
+  } else {
+    console.log("Connected to SQLite database.");
+    db.run(`CREATE TABLE IF NOT EXISTS coinflips (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      result TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }
+});
+
+// Production (Render) PostgreSQL setup
+let pgPool;
+if (process.env.DATABASE_URL) {
+  pgPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  });
+  console.log("PostgreSQL pool initialized for production.");
+}
+
+// --- ROUTES ---
+
+// Root route
+app.get("/", (req, res) => {
+  res.send("🦴 Hyena Core backend is running...");
+});
+
+// Coin flip sweepstakes route
+app.get("/flip", async (req, res) => {
+  const result = Math.random() < 0.5 ? "heads" : "tails";
+
+  // Save result to SQLite (testing mode)
+  db.run(`INSERT INTO coinflips (result) VALUES (?)`, [result], (err) => {
+    if (err) console.error(err.message);
+  });
+
+  // Save result to PostgreSQL (Render mode)
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        "CREATE TABLE IF NOT EXISTS coinflips (id SERIAL PRIMARY KEY, result TEXT, timestamp TIMESTAMP DEFAULT NOW())"
+      );
+      await pgPool.query("INSERT INTO coinflips (result) VALUES ($1)", [result]);
+    } catch (err) {
+      console.error("PostgreSQL insert error:", err);
+    }
+  }
+
+  res.json({ result });
+});
+
+// Admin test route
+app.get("/admin/test", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "Hyena Core admin link active",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// --- START SERVER ---
+app.listen(PORT, () => {
+  console.log(`🦴 Hyena Core backend running on port ${PORT}`);
+});
